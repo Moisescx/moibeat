@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'main.dart'; // Importamos esto para poder usar el notificadorTema
+import 'main.dart'; 
 
 class PantallaAjustes extends StatelessWidget {
   const PantallaAjustes({super.key});
@@ -28,17 +28,14 @@ class PantallaAjustes extends StatelessWidget {
                 value: esOscuro,
                 activeThumbColor: Colors.greenAccent,
                 onChanged: (valor) {
-                  // Cuando tocas el switch, cambiamos el interruptor global
                   notificadorTema.value = valor ? ThemeMode.dark : ThemeMode.light;
                 },
               );
             },
           ),
           
-          // Spacer() empuja todo lo que pongas debajo hacia el fondo de la pantalla
           const Spacer(),
           
-          // --- EL FOOTER CON TU FIRMA ---
           Padding(
             padding: const EdgeInsets.only(bottom: 30.0),
             child: Column(

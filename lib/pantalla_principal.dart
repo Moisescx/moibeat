@@ -18,10 +18,8 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
 
   SongModel? _cancionActual;
   int _indiceActual = -1;
-  // NUEVO: Este notificador le gritará a la pantalla gigante cuando cambiemos de canción
   final ValueNotifier<int> _notificadorIndice = ValueNotifier(-1);
   List<SongModel> _listaCanciones = [];
-  // NUEVO: Guarda lo que el usuario escribe en la lupa
   String _textoBusqueda = "";
 
   bool _tienePermiso = false;
@@ -32,11 +30,8 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
     super.initState();
     _pedirPermisos();
 
-    // NUEVO: El Vigilante que escucha cuándo termina la canción
     _reproductor.playerStateStream.listen((estado) {
-      // Si el estado del reproductor es "completado" (llegó al final)
       if (estado.processingState == ProcessingState.completed) {
-        // Pasamos automáticamente a la siguiente canción
         _reproducirCancion(_indiceActual + 1);
       }
     });
@@ -90,21 +85,17 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
     }
   }
 
-  // --- LA NUEVA PANTALLA GIGANTE PREMIUM ---
   void _mostrarPantallaReproduccion(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        // Envolvemos todo en el escuchador que reacciona a nuestro notificador
         return ValueListenableBuilder<int>(
           valueListenable: _notificadorIndice,
           builder: (context, indiceActualizado, child) {
-            // Si por alguna razón el índice es -1, no dibujamos nada
             if (indiceActualizado == -1) return const SizedBox.shrink();
 
-            // Obtenemos la canción correcta basándonos en el nuevo índice en tiempo real
             var cancionMostrar = _listaCanciones[indiceActualizado];
 
             return Container(
@@ -151,8 +142,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(30),
                         child: QueryArtworkWidget(
-                          id: cancionMostrar
-                              .id, // ¡Usamos la canción actualizada!
+                          id: cancionMostrar.id,
                           type: ArtworkType.AUDIO,
                           artworkWidth: MediaQuery.of(context).size.width * 0.8,
                           artworkHeight:
@@ -177,7 +167,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
 
                     // --- TÍTULO Y ARTISTA ---
                     TextScroll(
-                      cancionMostrar.title, // ¡Usamos la canción actualizada!
+                      cancionMostrar.title,
                       mode: TextScrollMode.bouncing,
                       velocity: const Velocity(pixelsPerSecond: Offset(20, 0)),
                       delayBefore: const Duration(seconds: 3),
@@ -191,8 +181,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                     ),
                     const SizedBox(height: 8),
                     TextScroll(
-                      cancionMostrar.artist ??
-                          "Artista desconocido", // ¡Usamos la canción actualizada!
+                      cancionMostrar.artist ?? "Artista desconocido",
                       mode: TextScrollMode.bouncing,
                       velocity: const Velocity(pixelsPerSecond: Offset(15, 0)),
                       delayBefore: const Duration(seconds: 3),
@@ -219,7 +208,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                           color: Colors.white,
                           onPressed: () {
                             _reproducirCancion(indiceActualizado - 1);
-                            // ¡Mira mamá, sin Navigator.pop!
                           },
                         ),
 
@@ -266,7 +254,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                           color: Colors.white,
                           onPressed: () {
                             _reproducirCancion(indiceActualizado + 1);
-                            // ¡Mira mamá, sin Navigator.pop!
                           },
                         ),
                       ],
@@ -318,7 +305,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                   );
                 }
 
-                // 1. Nuestro filtro anti-basura original
                 _listaCanciones = snapshot.data!.where((cancion) {
                   final duracion = cancion.duration ?? 0;
                   final esMusica = cancion.isMusic ?? true;
@@ -331,7 +317,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                       !esNotificacion;
                 }).toList();
 
-                // 2. NUEVO: Filtramos por lo que escribes en el buscador
                 var cancionesFiltradas = _listaCanciones.where((cancion) {
                   return cancion.title.toLowerCase().contains(
                         _textoBusqueda.toLowerCase(),
@@ -348,15 +333,11 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                   );
                 }
 
-                // 3. NUEVO: Envolvemos la lista en una Columna para poner el buscador arriba
-                // 3. NUEVO: Metemos el buscador DIRECTAMENTE en la lista
                 return ListView.builder(
-                  // Sumamos 1 al total para hacerle espacio al buscador en la primera posición
                   itemCount: cancionesFiltradas.isEmpty
                       ? 1
                       : cancionesFiltradas.length + 1,
                   itemBuilder: (context, index) {
-                    // Si estamos en la posición 0 (hasta arriba), dibujamos el buscador
                     if (index == 0) {
                       return Padding(
                         padding: const EdgeInsets.all(16.0),
@@ -386,7 +367,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                       );
                     }
 
-                    // Si buscó algo que no existe, mostramos este mensaje debajo del buscador
                     if (cancionesFiltradas.isEmpty) {
                       return const Padding(
                         padding: EdgeInsets.only(top: 40.0),
@@ -396,26 +376,21 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                       );
                     }
 
-                    // Si son canciones reales, restamos 1 al índice porque el buscador ocupó el puesto 0
                     var cancion = cancionesFiltradas[index - 1];
                     int indiceOriginal = _listaCanciones.indexOf(cancion);
 
                     // --- NUEVO DISEÑO ESTRUCTURAL DE LA CANCIÓN ---
                     return Container(
-                      // 1. Espacio entre las tarjetas y los bordes de la pantalla
                       margin: const EdgeInsets.only(
                         bottom: 12,
                         left: 16,
                         right: 16,
                       ),
                       decoration: BoxDecoration(
-                        // 2. Un fondo sutilmente diferente al fondo de la app
                         color: Colors.grey.withOpacity(0.1),
-                        // 3. Esquinas súper redondeadas
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: ListTile(
-                        // Más espacio interno para que la canción respire
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 8,
@@ -425,7 +400,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                         leading: ClipRRect(
                           borderRadius: BorderRadius.circular(
                             12,
-                          ), // Redondeamos la imagen
+                          ), 
                           child: SizedBox(
                             width: 55,
                             height: 55,
@@ -433,7 +408,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                               id: cancion.id,
                               type: ArtworkType.AUDIO,
                               artworkBorder: BorderRadius
-                                  .zero, // Quitamos el borde por defecto para usar el nuestro
+                                  .zero, 
                               nullArtworkWidget: Container(
                                 color: Colors.grey[800],
                                 child: const Icon(
@@ -452,7 +427,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontWeight: FontWeight.bold, // Título más pesado
+                            fontWeight: FontWeight.bold, 
                             fontSize: 16,
                           ),
                         ),
@@ -468,7 +443,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                         ),
 
                         // --- ÍCONO DE PLAY VISUAL ---
-                        // Agregamos un pequeño botón a la derecha para invitar al usuario a tocar
                         trailing: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
@@ -499,7 +473,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                   _mostrarPantallaReproduccion(context);
                 },
                 child: Container(
-                  height: 72, // Un poquito más alto para que quepa todo bien
+                  height: 72, 
                   margin: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 10,
@@ -507,7 +481,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                   decoration: BoxDecoration(
                     color: Colors.grey[900],
                     borderRadius: BorderRadius.circular(16),
-                    // MI TOQUE 1: Una sombra suave para que flote de verdad
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.4),
@@ -516,12 +489,11 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                       ),
                     ],
                   ),
-                  // ClipRRect asegura que la barrita de progreso no se salga de las esquinas redondeadas
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
                     child: Column(
                       children: [
-                        // --- LA LÍNEA FINA DE PROGRESO (Estilo Spotify) ---
+                        // --- LA LÍNEA FINA DE PROGRESO ---
                         StreamBuilder<Duration>(
                           stream: _reproductor.positionStream,
                           builder: (context, snapshot) {
@@ -530,7 +502,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                                 _reproductor.duration ??
                                 const Duration(seconds: 1);
 
-                            // Calculamos el porcentaje de la canción
                             double progreso =
                                 posicion.inMilliseconds /
                                 duracion.inMilliseconds;
@@ -540,7 +511,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
 
                             return LinearProgressIndicator(
                               value: progreso,
-                              minHeight: 3, // Súper finita
+                              minHeight: 3, 
                               backgroundColor: Colors.grey[800],
                               valueColor: const AlwaysStoppedAnimation<Color>(
                                 Colors.greenAccent,
@@ -557,7 +528,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                             ),
                             child: Row(
                               children: [
-                                // MI TOQUE 2: La carátula real en miniatura
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
                                   child: SizedBox(
@@ -579,7 +549,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                                 ),
                                 const SizedBox(width: 12),
 
-                                // Título y Artista apilados
                                 Expanded(
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
@@ -610,7 +579,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                                   ),
                                 ),
 
-                                // MI TOQUE 3: Botones minimalistas y redondeados
                                 StreamBuilder<bool>(
                                   stream: _reproductor.playingStream,
                                   builder: (context, snapshot) {
@@ -633,7 +601,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                                     );
                                   },
                                 ),
-                                // Dejé solo el botón de "Siguiente" para ahorrar espacio y mantenerlo limpio
+                                
                                 IconButton(
                                   icon: const Icon(Icons.skip_next_rounded),
                                   iconSize: 32,
@@ -656,7 +624,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
   }
 }
 
-// NUEVO COMPONENTE: Una barra de progreso inteligente
 class BarraDeProgreso extends StatefulWidget {
   final AudioPlayer reproductor;
   const BarraDeProgreso({super.key, required this.reproductor});
@@ -666,9 +633,7 @@ class BarraDeProgreso extends StatefulWidget {
 }
 
 class _BarraDeProgresoState extends State<BarraDeProgreso> {
-  // Guarda la posición de tu dedo mientras arrastras
   double? _valorArrastre;
-  // Recuerda si la canción estaba sonando antes de tocar la barra
   bool _estabaReproduciendo = false;
 
   String _formatearTiempo(Duration duracion) {
@@ -686,7 +651,6 @@ class _BarraDeProgresoState extends State<BarraDeProgreso> {
         final posicionActual = snapshot.data ?? Duration.zero;
         final duracionTotal = widget.reproductor.duration ?? Duration.zero;
 
-        // Si estamos arrastrando, mostramos el valor del dedo. Si no, mostramos el de la canción.
         double valorSlider =
             _valorArrastre ?? posicionActual.inSeconds.toDouble();
         double maxSlider = duracionTotal.inSeconds.toDouble();
@@ -703,7 +667,6 @@ class _BarraDeProgresoState extends State<BarraDeProgreso> {
               activeColor: Colors.greenAccent,
               inactiveColor: Colors.grey[800],
               onChangeStart: (value) {
-                // 1. Empezamos a tocar: Pausamos en silencio y tomamos el control
                 _estabaReproduciendo = widget.reproductor.playing;
                 widget.reproductor.pause();
                 setState(() {
@@ -711,20 +674,17 @@ class _BarraDeProgresoState extends State<BarraDeProgreso> {
                 });
               },
               onChanged: (value) {
-                // 2. Arrastrando: Solo actualizamos lo visual
                 setState(() {
                   _valorArrastre = value;
                 });
               },
               onChangeEnd: (value) async {
-                // 3. Soltamos: Saltamos al segundo exacto
                 await widget.reproductor.seek(Duration(seconds: value.toInt()));
-                // Si estaba sonando antes, le volvemos a dar Play
                 if (_estabaReproduciendo) {
                   widget.reproductor.play();
                 }
                 setState(() {
-                  _valorArrastre = null; // Le devolvemos el control a la música
+                  _valorArrastre = null; 
                 });
               },
             ),
@@ -733,7 +693,6 @@ class _BarraDeProgresoState extends State<BarraDeProgreso> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Muestra el tiempo del arrastre o el tiempo actual
                   Text(
                     _formatearTiempo(Duration(seconds: valorSlider.toInt())),
                     style: const TextStyle(color: Colors.grey),

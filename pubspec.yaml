@@ -95,5 +95,5 @@ flutter:
 flutter_launcher_icons:
   android: "ic_launcher" # Nombre del icono en Android
   ios: true # Generar también para iPhone
-  image_path: "assets/icon/logoRep.png" # <--- ¡ASEGÚRATE QUE ESTA RUTA SEA CORRECTA!
-  min_sdk_android: 21 # Opcional, para compatibilidad
+  image_path: "assets/icon/logoRep.png" 
+  min_sdk_android: 21 
