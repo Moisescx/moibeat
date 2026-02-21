@@ -13,7 +13,7 @@ class MiReproductorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Mi Reproductor',
+      title: 'MoiBeat', // Cambié el nombre de la app aquí
       theme:
           ThemeData.dark(), // Un tema oscuro siempre se ve genial en apps de música
       home: const PantallaPrincipal(),
@@ -221,7 +221,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Mi Música Local'), elevation: 0),
+      appBar: AppBar(title: const Text('MoiBeat'), elevation: 0),
 
       body: !_tienePermiso
           ? const Center(child: Text('Necesito permisos para buscar música 😅'))
