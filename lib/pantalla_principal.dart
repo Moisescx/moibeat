@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -10,8 +11,9 @@ import 'tab_artistas.dart';
 import 'tab_canciones.dart';
 import 'tab_playlists.dart';
 import 'package:audio_service/audio_service.dart';
-import 'main.dart'; 
-import 'motor_audio.dart'; 
+import 'main.dart';
+import 'motor_audio.dart';
+import 'package:palette_generator/palette_generator.dart';
 
 class PantallaPrincipal extends StatefulWidget {
   const PantallaPrincipal({super.key});
@@ -32,6 +34,11 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
 
   List<String> _misPlaylists = [];
 
+  final ValueNotifier<List<Color>> _coloresFondo = ValueNotifier([
+    const Color(0xFF1E1E1E),
+    Colors.black,
+  ]);
+
   bool _tienePermiso = false;
   late Future<List<SongModel>> _cancionesFuture;
 
@@ -49,6 +56,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
         setState(() {
           _indiceActual = index;
           _cancionActual = _colaReproduccion[index];
+          _actualizarColorFondo(_colaReproduccion[index].id);
         });
         _notificadorIndice.value = index;
       }
@@ -60,6 +68,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
     _indexSub?.cancel();
     _reproductor.dispose();
     _notificadorIndice.dispose();
+    _coloresFondo.dispose();
     super.dispose();
   }
 
@@ -68,6 +77,33 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
     setState(() {
       _misPlaylists = prefs.getStringList('mis_playlists_guardadas') ?? [];
     });
+  }
+
+  Future<void> _actualizarColorFondo(int idCancion) async {
+    try {
+      // 1. Buscamos la foto de la canción en la memoria del celular
+      final OnAudioQuery audioQuery = OnAudioQuery();
+      final Uint8List? arteBytes = await audioQuery.queryArtwork(
+        idCancion,
+        ArtworkType.AUDIO,
+        size: 200, // Tamaño pequeño para que el cálculo sea rapidísimo
+      );
+
+      if (arteBytes != null) {
+        final PaletteGenerator paleta =
+            await PaletteGenerator.fromImageProvider(MemoryImage(arteBytes));
+        // Tomamos el color, pero si es muy brillante, podemos mezclarlo un poco con negro para que no lastime la vista (opcional)
+        Color colorDominante =
+            paleta.dominantColor?.color ?? const Color(0xFF1E1E1E);
+
+        // CERO transparencias. Color dominante arriba, Negro puro abajo.
+        _coloresFondo.value = [colorDominante, Colors.black];
+      } else {
+        _coloresFondo.value = [const Color(0xFF1E1E1E), Colors.black];
+      }
+    } catch (e) {
+      debugPrint("Error extrayendo color: $e");
+    }
   }
 
   Future<void> _pedirPermisos() async {
@@ -104,7 +140,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
       });
     }
   }
-
 
   void _reproducirCancion(int index) async {
     if (index < 0 || index >= _colaReproduccion.length) return;
@@ -153,248 +188,268 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
 
             var cancionMostrar = _colaReproduccion[indiceActualizado];
 
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.95,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.grey[850]!, Colors.black],
-                ),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(40),
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24.0,
-                  vertical: 16.0,
-                ),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 45,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[600],
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+            return ValueListenableBuilder<List<Color>>(
+              valueListenable: _coloresFondo,
+              builder: (context, colores, child) {
+                return AnimatedContainer(
+                  duration: const Duration(
+                    milliseconds: 800,
+                  ), // La transición suave dura casi 1 segundo
+                  curve: Curves.easeInOut,
+                  height: MediaQuery.of(context).size.height * 0.95,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: colores, // Aquí inyectamos los colores dinámicos
                     ),
-                    const Spacer(),
-
-                    // --- CARÁTULA FLOTANTE ---
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(30),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.6),
-                            blurRadius: 40,
-                            offset: const Offset(0, 20),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(40),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24.0,
+                      vertical: 16.0,
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 45,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[600],
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(30),
-                        child: QueryArtworkWidget(
-                          id: cancionMostrar.id,
-                          type: ArtworkType.AUDIO,
-                          artworkWidth: MediaQuery.of(context).size.width * 0.8,
-                          artworkHeight:
-                              MediaQuery.of(context).size.width * 0.8,
-                          artworkBorder: BorderRadius.zero,
-                          size: 1000,
-                          quality: 100,
-                          nullArtworkWidget: Container(
-                            width: MediaQuery.of(context).size.width * 0.8,
-                            height: MediaQuery.of(context).size.width * 0.8,
-                            color: Colors.grey[900],
-                            child: const Icon(
-                              Icons.music_note,
-                              size: 100,
-                              color: Colors.grey,
+                        ),
+                        const Spacer(),
+
+                        // --- CARÁTULA FLOTANTE ---
+                        Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(30),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.6),
+                                blurRadius: 40,
+                                offset: const Offset(0, 20),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(30),
+                            child: QueryArtworkWidget(
+                              key: ValueKey(cancionMostrar.id),
+                              keepOldArtwork: true,
+                              id: cancionMostrar.id,
+                              type: ArtworkType.AUDIO,
+                              artworkWidth:
+                                  MediaQuery.of(context).size.width * 0.8,
+                              artworkHeight:
+                                  MediaQuery.of(context).size.width * 0.8,
+                              artworkBorder: BorderRadius.zero,
+                              size: 1000,
+                              quality: 100,
+                              nullArtworkWidget: Container(
+                                width: MediaQuery.of(context).size.width * 0.8,
+                                height: MediaQuery.of(context).size.width * 0.8,
+                                color: Colors.grey[900],
+                                child: const Icon(
+                                  Icons.music_note,
+                                  size: 100,
+                                  color: Colors.grey,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                    const Spacer(),
+                        const Spacer(),
 
-                    // --- TÍTULO Y ARTISTA ---
-                    TextScroll(
-                      cancionMostrar.title,
-                      mode: TextScrollMode.bouncing,
-                      velocity: const Velocity(pixelsPerSecond: Offset(20, 0)),
-                      delayBefore: const Duration(seconds: 3),
-                      pauseBetween: const Duration(seconds: 10),
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    TextScroll(
-                      cancionMostrar.artist ?? "Artista desconocido",
-                      mode: TextScrollMode.bouncing,
-                      velocity: const Velocity(pixelsPerSecond: Offset(15, 0)),
-                      delayBefore: const Duration(seconds: 3),
-                      pauseBetween: const Duration(seconds: 10),
-                      style: const TextStyle(
-                        fontSize: 18,
-                        color: Colors.greenAccent,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
+                        // --- TÍTULO Y ARTISTA ---
+                        TextScroll(
+                          cancionMostrar.title,
+                          mode: TextScrollMode.bouncing,
+                          velocity: const Velocity(
+                            pixelsPerSecond: Offset(20, 0),
+                          ),
+                          delayBefore: const Duration(seconds: 3),
+                          pauseBetween: const Duration(seconds: 10),
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        TextScroll(
+                          cancionMostrar.artist ?? "Artista desconocido",
+                          mode: TextScrollMode.bouncing,
+                          velocity: const Velocity(
+                            pixelsPerSecond: Offset(15, 0),
+                          ),
+                          delayBefore: const Duration(seconds: 3),
+                          pauseBetween: const Duration(seconds: 10),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            color: Colors.greenAccent,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
 
-                    const SizedBox(height: 30),
-                    BarraDeProgreso(reproductor: _reproductor),
-                    const SizedBox(height: 20),
+                        const SizedBox(height: 30),
+                        BarraDeProgreso(reproductor: _reproductor),
+                        const SizedBox(height: 20),
 
-                    // --- BOTONES ---
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        // BOTÓN 1: SHUFFLE (Aleatorio)
-                        StreamBuilder<bool>(
-                          stream: _reproductor.shuffleModeEnabledStream,
-                          builder: (context, snapshot) {
-                            final isShuffle = snapshot.data ?? false;
-                            return IconButton(
-                              icon: Icon(
-                                Icons.shuffle_rounded,
-                                color: isShuffle
-                                    ? Colors.greenAccent
-                                    : Colors.white,
-                              ),
-                              iconSize: 28,
-                              onPressed: () async {
-                                final enable = !isShuffle;
-                                if (enable)
-                                  await _reproductor
-                                      .shuffle(); 
-                                await _reproductor.setShuffleModeEnabled(
-                                  enable,
+                        // --- BOTONES ---
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            // BOTÓN 1: SHUFFLE (Aleatorio)
+                            StreamBuilder<bool>(
+                              stream: _reproductor.shuffleModeEnabledStream,
+                              builder: (context, snapshot) {
+                                final isShuffle = snapshot.data ?? false;
+                                return IconButton(
+                                  icon: Icon(
+                                    Icons.shuffle_rounded,
+                                    color: isShuffle
+                                        ? Colors.greenAccent
+                                        : Colors.white,
+                                  ),
+                                  iconSize: 28,
+                                  onPressed: () async {
+                                    final enable = !isShuffle;
+                                    if (enable) await _reproductor.shuffle();
+                                    await _reproductor.setShuffleModeEnabled(
+                                      enable,
+                                    );
+                                  },
                                 );
                               },
-                            );
-                          },
-                        ),
+                            ),
 
-                        // BOTÓN 2: ANTERIOR (Inteligente)
-                        IconButton(
-                          icon: const Icon(Icons.skip_previous_rounded),
-                          iconSize: 45,
-                          color: Colors.white,
-                          onPressed: () {
-                            if (_reproductor.processingState ==
-                                ProcessingState.idle) {
-                              _reproducirCancion(
-                                _indiceActual > 0 ? _indiceActual - 1 : 0,
-                              );
-                            } else if (_reproductor.hasPrevious) {
-                              _reproductor.seekToPrevious();
-                            }
-                          },
-                        ),
-
-                        // BOTÓN 3: PLAY / PAUSA (Inteligente)
-                        StreamBuilder<bool>(
-                          stream: _reproductor.playingStream,
-                          builder: (context, snapshot) {
-                            bool isPlaying = snapshot.data ?? false;
-                            return Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.greenAccent,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.greenAccent.withValues(
-                                      alpha: 0.3,
-                                    ),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
-                              ),
-                              child: IconButton(
-                                padding: const EdgeInsets.all(16),
-                                icon: Icon(
-                                  isPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                ),
-                                iconSize: 45,
-                                color: Colors.black,
-                                onPressed: () {
-                                  if (isPlaying) {
-                                    _reproductor.pause();
-                                  } else {
-                                    if (_reproductor.processingState ==
-                                        ProcessingState.idle) {
-                                      _reproducirCancion(_indiceActual);
-                                    } else {
-                                      _reproductor.play();
-                                    }
-                                  }
-                                },
-                              ),
-                            );
-                          },
-                        ),
-
-                        // BOTÓN 4: SIGUIENTE (Inteligente)
-                        IconButton(
-                          icon: const Icon(Icons.skip_next_rounded),
-                          iconSize: 45,
-                          color: Colors.white,
-                          onPressed: () {
-                            if (_reproductor.processingState ==
-                                ProcessingState.idle) {
-                              _reproducirCancion(_indiceActual + 1);
-                            } else if (_reproductor.hasNext) {
-                              _reproductor.seekToNext();
-                            }
-                          },
-                        ),
-
-                        // BOTÓN 5: REPETIR (Loop)
-                        StreamBuilder<LoopMode>(
-                          stream: _reproductor.loopModeStream,
-                          builder: (context, snapshot) {
-                            final loopMode = snapshot.data ?? LoopMode.off;
-                            IconData icon = Icons.repeat_rounded;
-                            Color color = Colors.white;
-
-                            if (loopMode == LoopMode.all)
-                              color = Colors.greenAccent;
-                            else if (loopMode == LoopMode.one) {
-                              icon = Icons.repeat_one_rounded;
-                              color = Colors.greenAccent;
-                            }
-
-                            return IconButton(
-                              icon: Icon(icon, color: color),
-                              iconSize: 28,
-                              onPressed: () async {
-                                if (loopMode == LoopMode.off)
-                                  await _reproductor.setLoopMode(LoopMode.all);
-                                else if (loopMode == LoopMode.all)
-                                  await _reproductor.setLoopMode(LoopMode.one);
-                                else
-                                  await _reproductor.setLoopMode(LoopMode.off);
+                            // BOTÓN 2: ANTERIOR (Inteligente)
+                            IconButton(
+                              icon: const Icon(Icons.skip_previous_rounded),
+                              iconSize: 45,
+                              color: Colors.white,
+                              onPressed: () {
+                                if (_reproductor.processingState ==
+                                    ProcessingState.idle) {
+                                  _reproducirCancion(
+                                    _indiceActual > 0 ? _indiceActual - 1 : 0,
+                                  );
+                                } else if (_reproductor.hasPrevious) {
+                                  _reproductor.seekToPrevious();
+                                }
                               },
-                            );
-                          },
+                            ),
+
+                            // BOTÓN 3: PLAY / PAUSA (Inteligente)
+                            StreamBuilder<bool>(
+                              stream: _reproductor.playingStream,
+                              builder: (context, snapshot) {
+                                bool isPlaying = snapshot.data ?? false;
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.greenAccent,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.greenAccent.withValues(
+                                          alpha: 0.3,
+                                        ),
+                                        blurRadius: 20,
+                                        offset: const Offset(0, 8),
+                                      ),
+                                    ],
+                                  ),
+                                  child: IconButton(
+                                    padding: const EdgeInsets.all(16),
+                                    icon: Icon(
+                                      isPlaying
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded,
+                                    ),
+                                    iconSize: 45,
+                                    color: Colors.black,
+                                    onPressed: () {
+                                      if (isPlaying) {
+                                        _reproductor.pause();
+                                      } else {
+                                        if (_reproductor.processingState ==
+                                            ProcessingState.idle) {
+                                          _reproducirCancion(_indiceActual);
+                                        } else {
+                                          _reproductor.play();
+                                        }
+                                      }
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+
+                            // BOTÓN 4: SIGUIENTE (Inteligente)
+                            IconButton(
+                              icon: const Icon(Icons.skip_next_rounded),
+                              iconSize: 45,
+                              color: Colors.white,
+                              onPressed: () {
+                                if (_reproductor.processingState ==
+                                    ProcessingState.idle) {
+                                  _reproducirCancion(_indiceActual + 1);
+                                } else if (_reproductor.hasNext) {
+                                  _reproductor.seekToNext();
+                                }
+                              },
+                            ),
+
+                            // BOTÓN 5: REPETIR (Loop)
+                            StreamBuilder<LoopMode>(
+                              stream: _reproductor.loopModeStream,
+                              builder: (context, snapshot) {
+                                final loopMode = snapshot.data ?? LoopMode.off;
+                                IconData icon = Icons.repeat_rounded;
+                                Color color = Colors.white;
+
+                                if (loopMode == LoopMode.all) {
+                                  color = Colors.greenAccent;
+                                } else if (loopMode == LoopMode.one) {
+                                  icon = Icons.repeat_one_rounded;
+                                  color = Colors.greenAccent;
+                                }
+
+                                return IconButton(
+                                  icon: Icon(icon, color: color),
+                                  iconSize: 28,
+                                  onPressed: () async {
+                                    if (loopMode == LoopMode.off) {
+                                      await _reproductor.setLoopMode(
+                                        LoopMode.all,
+                                      );
+                                    } else if (loopMode == LoopMode.all)
+                                      await _reproductor.setLoopMode(
+                                        LoopMode.one,
+                                      );
+                                    else
+                                      await _reproductor.setLoopMode(
+                                        LoopMode.off,
+                                      );
+                                  },
+                                );
+                              },
+                            ),
+                          ],
                         ),
+                        const Spacer(),
                       ],
                     ),
-                    const Spacer(),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             );
           },
         );
@@ -412,9 +467,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
       ),
       builder: (context) {
         return Container(
-          height:
-              MediaQuery.of(context).size.height *
-              0.7, 
+          height: MediaQuery.of(context).size.height * 0.7,
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -619,9 +672,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
       ),
       builder: (context) {
         return Container(
-          height:
-              MediaQuery.of(context).size.height *
-              0.85, 
+          height: MediaQuery.of(context).size.height * 0.85,
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -810,7 +861,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                     _misPlaylists,
                   );
 
-                  Navigator.pop(context); 
+                  Navigator.pop(context);
                 }
               },
               child: const Text(
@@ -951,8 +1002,9 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                               double progreso =
                                   posicion.inMilliseconds /
                                   duracion.inMilliseconds;
-                              if (progreso.isNaN || progreso.isInfinite)
+                              if (progreso.isNaN || progreso.isInfinite) {
                                 progreso = 0.0;
+                              }
                               if (progreso > 1.0) progreso = 1.0;
 
                               return LinearProgressIndicator(
