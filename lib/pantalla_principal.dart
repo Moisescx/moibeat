@@ -1,19 +1,25 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio/just_audio.dart';
 import 'pantalla_ajustes.dart';
-import 'package:text_scroll/text_scroll.dart';
+import 'theme_notifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'tab_artistas.dart';
-import 'tab_canciones.dart';
-import 'tab_playlists.dart';
+import 'tabs/tab_artistas.dart';
+import 'tabs/tab_canciones.dart';
+import 'tabs/tab_playlists.dart';
 import 'package:audio_service/audio_service.dart';
 import 'main.dart';
 import 'motor_audio.dart';
-import 'package:palette_generator/palette_generator.dart';
+import 'widgets/player_sheet.dart';
+import 'widgets/artist_songs_sheet.dart';
+import 'widgets/song_options_sheet.dart';
+import 'widgets/playlist_detail_sheet.dart';
+import 'tabs/tab_favoritos.dart';
+import 'services/color_service.dart';
+// import 'services/lyrics_service.dart'; // SUSPENDIDO
+import 'services/storage_service.dart';
 
 class PantallaPrincipal extends StatefulWidget {
   const PantallaPrincipal({super.key});
@@ -28,6 +34,9 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
   SongModel? _cancionActual;
   int _indiceActual = -1;
   final ValueNotifier<int> _notificadorIndice = ValueNotifier(-1);
+  final ValueNotifier<List<String>> _notificadorFavoritos = ValueNotifier([]);
+  // final ValueNotifier<bool> _viendoLetra = ValueNotifier(false); // SUSPENDIDO
+  // final ValueNotifier<String> _letraActual = ValueNotifier("Buscando letra..."); // SUSPENDIDO
   List<SongModel> _listaCanciones = [];
   List<SongModel> _colaReproduccion = [];
   StreamSubscription<int?>? _indexSub;
@@ -46,6 +55,8 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
   void initState() {
     super.initState();
     _cargarPlaylists();
+    _cargarFavoritos();
+    // _cargarConfiguracionGenius(); // SUSPENDIDO
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pedirPermisos();
@@ -57,6 +68,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
           _indiceActual = index;
           _cancionActual = _colaReproduccion[index];
           _actualizarColorFondo(_colaReproduccion[index].id);
+          // _buscarLetra(_colaReproduccion[index]); // SUSPENDIDO
         });
         _notificadorIndice.value = index;
       }
@@ -69,42 +81,46 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
     _reproductor.dispose();
     _notificadorIndice.dispose();
     _coloresFondo.dispose();
+    _notificadorFavoritos.dispose();
+    // _viendoLetra.dispose(); // SUSPENDIDO
+    // _letraActual.dispose(); // SUSPENDIDO
     super.dispose();
   }
 
   Future<void> _cargarPlaylists() async {
-    final prefs = await SharedPreferences.getInstance();
+    final playlists = await StorageService.cargarPlaylists();
     setState(() {
-      _misPlaylists = prefs.getStringList('mis_playlists_guardadas') ?? [];
+      _misPlaylists = playlists;
     });
   }
 
+  Future<void> _cargarFavoritos() async {
+    _notificadorFavoritos.value = await StorageService.cargarFavoritos();
+  }
+
   Future<void> _actualizarColorFondo(int idCancion) async {
-    try {
-      // 1. Buscamos la foto de la canción en la memoria del celular
-      final OnAudioQuery audioQuery = OnAudioQuery();
-      final Uint8List? arteBytes = await audioQuery.queryArtwork(
-        idCancion,
-        ArtworkType.AUDIO,
-        size: 200, // Tamaño pequeño para que el cálculo sea rapidísimo
-      );
+    final colores = await ColorService.actualizarColorFondo(idCancion);
+    _coloresFondo.value = colores;
+  }
 
-      if (arteBytes != null) {
-        final PaletteGenerator paleta =
-            await PaletteGenerator.fromImageProvider(MemoryImage(arteBytes));
-        // Tomamos el color, pero si es muy brillante, podemos mezclarlo un poco con negro para que no lastime la vista (opcional)
-        Color colorDominante =
-            paleta.dominantColor?.color ?? const Color(0xFF1E1E1E);
-
-        // CERO transparencias. Color dominante arriba, Negro puro abajo.
-        _coloresFondo.value = [colorDominante, Colors.black];
-      } else {
-        _coloresFondo.value = [const Color(0xFF1E1E1E), Colors.black];
-      }
-    } catch (e) {
-      debugPrint("Error extrayendo color: $e");
+  // --- MÉTODOS DE LETRAS (SUSPENDIDOS) ---
+  /*
+  Future<void> _cargarConfiguracionGenius() async {
+    final prefs = await SharedPreferences.getInstance();
+    final geniusHabilitado = prefs.getBool('genius_habilitado') ?? false;
+    LyricsService.habilitarGeniusAPI = geniusHabilitado;
+    
+    if (geniusHabilitado) {
+      debugPrint('✅ Genius API habilitado');
     }
   }
+
+  Future<void> _buscarLetra(SongModel cancion) async {
+    _letraActual.value = "Buscando letra...\n🔍";
+    final letra = await LyricsService.obtenerLetra(cancion);
+    _letraActual.value = letra;
+  }
+  */
 
   Future<void> _pedirPermisos() async {
     PermissionStatus statusStorage = await Permission.storage.request();
@@ -188,267 +204,16 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
 
             var cancionMostrar = _colaReproduccion[indiceActualizado];
 
-            return ValueListenableBuilder<List<Color>>(
-              valueListenable: _coloresFondo,
-              builder: (context, colores, child) {
-                return AnimatedContainer(
-                  duration: const Duration(
-                    milliseconds: 800,
-                  ), // La transición suave dura casi 1 segundo
-                  curve: Curves.easeInOut,
-                  height: MediaQuery.of(context).size.height * 0.95,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: colores, // Aquí inyectamos los colores dinámicos
-                    ),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(40),
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24.0,
-                      vertical: 16.0,
-                    ),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 45,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[600],
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                        const Spacer(),
-
-                        // --- CARÁTULA FLOTANTE ---
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(30),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.6),
-                                blurRadius: 40,
-                                offset: const Offset(0, 20),
-                              ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(30),
-                            child: QueryArtworkWidget(
-                              key: ValueKey(cancionMostrar.id),
-                              keepOldArtwork: true,
-                              id: cancionMostrar.id,
-                              type: ArtworkType.AUDIO,
-                              artworkWidth:
-                                  MediaQuery.of(context).size.width * 0.8,
-                              artworkHeight:
-                                  MediaQuery.of(context).size.width * 0.8,
-                              artworkBorder: BorderRadius.zero,
-                              size: 1000,
-                              quality: 100,
-                              nullArtworkWidget: Container(
-                                width: MediaQuery.of(context).size.width * 0.8,
-                                height: MediaQuery.of(context).size.width * 0.8,
-                                color: Colors.grey[900],
-                                child: const Icon(
-                                  Icons.music_note,
-                                  size: 100,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-
-                        // --- TÍTULO Y ARTISTA ---
-                        TextScroll(
-                          cancionMostrar.title,
-                          mode: TextScrollMode.bouncing,
-                          velocity: const Velocity(
-                            pixelsPerSecond: Offset(20, 0),
-                          ),
-                          delayBefore: const Duration(seconds: 3),
-                          pauseBetween: const Duration(seconds: 10),
-                          style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        TextScroll(
-                          cancionMostrar.artist ?? "Artista desconocido",
-                          mode: TextScrollMode.bouncing,
-                          velocity: const Velocity(
-                            pixelsPerSecond: Offset(15, 0),
-                          ),
-                          delayBefore: const Duration(seconds: 3),
-                          pauseBetween: const Duration(seconds: 10),
-                          style: const TextStyle(
-                            fontSize: 18,
-                            color: Colors.greenAccent,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-
-                        const SizedBox(height: 30),
-                        BarraDeProgreso(reproductor: _reproductor),
-                        const SizedBox(height: 20),
-
-                        // --- BOTONES ---
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            // BOTÓN 1: SHUFFLE (Aleatorio)
-                            StreamBuilder<bool>(
-                              stream: _reproductor.shuffleModeEnabledStream,
-                              builder: (context, snapshot) {
-                                final isShuffle = snapshot.data ?? false;
-                                return IconButton(
-                                  icon: Icon(
-                                    Icons.shuffle_rounded,
-                                    color: isShuffle
-                                        ? Colors.greenAccent
-                                        : Colors.white,
-                                  ),
-                                  iconSize: 28,
-                                  onPressed: () async {
-                                    final enable = !isShuffle;
-                                    if (enable) await _reproductor.shuffle();
-                                    await _reproductor.setShuffleModeEnabled(
-                                      enable,
-                                    );
-                                  },
-                                );
-                              },
-                            ),
-
-                            // BOTÓN 2: ANTERIOR (Inteligente)
-                            IconButton(
-                              icon: const Icon(Icons.skip_previous_rounded),
-                              iconSize: 45,
-                              color: Colors.white,
-                              onPressed: () {
-                                if (_reproductor.processingState ==
-                                    ProcessingState.idle) {
-                                  _reproducirCancion(
-                                    _indiceActual > 0 ? _indiceActual - 1 : 0,
-                                  );
-                                } else if (_reproductor.hasPrevious) {
-                                  _reproductor.seekToPrevious();
-                                }
-                              },
-                            ),
-
-                            // BOTÓN 3: PLAY / PAUSA (Inteligente)
-                            StreamBuilder<bool>(
-                              stream: _reproductor.playingStream,
-                              builder: (context, snapshot) {
-                                bool isPlaying = snapshot.data ?? false;
-                                return Container(
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: Colors.greenAccent,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.greenAccent.withValues(
-                                          alpha: 0.3,
-                                        ),
-                                        blurRadius: 20,
-                                        offset: const Offset(0, 8),
-                                      ),
-                                    ],
-                                  ),
-                                  child: IconButton(
-                                    padding: const EdgeInsets.all(16),
-                                    icon: Icon(
-                                      isPlaying
-                                          ? Icons.pause_rounded
-                                          : Icons.play_arrow_rounded,
-                                    ),
-                                    iconSize: 45,
-                                    color: Colors.black,
-                                    onPressed: () {
-                                      if (isPlaying) {
-                                        _reproductor.pause();
-                                      } else {
-                                        if (_reproductor.processingState ==
-                                            ProcessingState.idle) {
-                                          _reproducirCancion(_indiceActual);
-                                        } else {
-                                          _reproductor.play();
-                                        }
-                                      }
-                                    },
-                                  ),
-                                );
-                              },
-                            ),
-
-                            // BOTÓN 4: SIGUIENTE (Inteligente)
-                            IconButton(
-                              icon: const Icon(Icons.skip_next_rounded),
-                              iconSize: 45,
-                              color: Colors.white,
-                              onPressed: () {
-                                if (_reproductor.processingState ==
-                                    ProcessingState.idle) {
-                                  _reproducirCancion(_indiceActual + 1);
-                                } else if (_reproductor.hasNext) {
-                                  _reproductor.seekToNext();
-                                }
-                              },
-                            ),
-
-                            // BOTÓN 5: REPETIR (Loop)
-                            StreamBuilder<LoopMode>(
-                              stream: _reproductor.loopModeStream,
-                              builder: (context, snapshot) {
-                                final loopMode = snapshot.data ?? LoopMode.off;
-                                IconData icon = Icons.repeat_rounded;
-                                Color color = Colors.white;
-
-                                if (loopMode == LoopMode.all) {
-                                  color = Colors.greenAccent;
-                                } else if (loopMode == LoopMode.one) {
-                                  icon = Icons.repeat_one_rounded;
-                                  color = Colors.greenAccent;
-                                }
-
-                                return IconButton(
-                                  icon: Icon(icon, color: color),
-                                  iconSize: 28,
-                                  onPressed: () async {
-                                    if (loopMode == LoopMode.off) {
-                                      await _reproductor.setLoopMode(
-                                        LoopMode.all,
-                                      );
-                                    } else if (loopMode == LoopMode.all)
-                                      await _reproductor.setLoopMode(
-                                        LoopMode.one,
-                                      );
-                                    else
-                                      await _reproductor.setLoopMode(
-                                        LoopMode.off,
-                                      );
-                                  },
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                        const Spacer(),
-                      ],
-                    ),
-                  ),
-                );
+            return PlayerSheet(
+              cancionMostrar: cancionMostrar,
+              reproductor: _reproductor,
+              coloresFondo: _coloresFondo,
+              // viendoLetra: _viendoLetra, // SUSPENDIDO
+              // letraActual: _letraActual, // SUSPENDIDO
+              notificadorFavoritos: _notificadorFavoritos,
+              indiceActual: indiceActualizado,
+              onAgregarAPlaylist: (cancion) {
+                _mostrarOpcionesCancion(context, cancion);
               },
             );
           },
@@ -466,91 +231,16 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
       ),
       builder: (context) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[600],
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              Text(
-                "Canciones de ${artista.artist}",
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.greenAccent,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              Expanded(
-                child: FutureBuilder<List<SongModel>>(
-                  future: _audioQuery.queryAudiosFrom(
-                    AudiosFromType.ARTIST_ID,
-                    artista.id,
-                  ),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(
-                        child: CircularProgressIndicator(
-                          color: Colors.greenAccent,
-                        ),
-                      );
-                    }
-                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return const Center(
-                        child: Text(
-                          'No hay canciones 😅',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      );
-                    }
-
-                    var cancionesDelArtista = snapshot.data!;
-
-                    return ListView.builder(
-                      itemCount: cancionesDelArtista.length,
-                      itemBuilder: (context, index) {
-                        var cancion = cancionesDelArtista[index];
-                        return ListTile(
-                          leading: const Icon(
-                            Icons.music_note,
-                            color: Colors.grey,
-                          ),
-                          title: Text(
-                            cancion.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          onTap: () {
-                            setState(() {
-                              _colaReproduccion = cancionesDelArtista;
-                            });
-                            _reproducirCancion(index);
-
-                            Navigator.pop(context);
-                            _mostrarPantallaReproduccion(context);
-                          },
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+        return ArtistSongsSheet(
+          artista: artista,
+          audioQuery: _audioQuery,
+          onSongTap: (index, cancionesDelArtista) {
+            setState(() {
+              _colaReproduccion = cancionesDelArtista;
+            });
+            _reproducirCancion(index);
+            _mostrarPantallaReproduccion(context);
+          },
         );
       },
     );
@@ -564,90 +254,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
       ),
       builder: (context) {
-        return Container(
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                "Agregar '${cancion.title}' a...",
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 20),
-
-              if (_misPlaylists.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                    "Primero debes crear una playlist en la pestaña 'Playlists'",
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                )
-              else
-                ..._misPlaylists.map((nombrePlaylist) {
-                  return ListTile(
-                    leading: const Icon(
-                      Icons.queue_music,
-                      color: Colors.greenAccent,
-                    ),
-                    title: Text(
-                      nombrePlaylist,
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    onTap: () async {
-                      final prefs = await SharedPreferences.getInstance();
-
-                      List<String> cancionesDeEstaPlaylist =
-                          prefs.getStringList('canciones_de_$nombrePlaylist') ??
-                          [];
-
-                      String idCancion = cancion.id.toString();
-
-                      if (!cancionesDeEstaPlaylist.contains(idCancion)) {
-                        cancionesDeEstaPlaylist.add(idCancion);
-                        await prefs.setStringList(
-                          'canciones_de_$nombrePlaylist',
-                          cancionesDeEstaPlaylist,
-                        );
-
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Agregada a $nombrePlaylist',
-                              style: const TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            backgroundColor: Colors.greenAccent,
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Esta canción ya está en la playlist',
-                            ),
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
-                      }
-
-                      Navigator.pop(context);
-                    },
-                  );
-                }),
-            ],
-          ),
-        );
+        return SongOptionsSheet(cancion: cancion, playlists: _misPlaylists);
       },
     );
   }
@@ -671,131 +278,16 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
       ),
       builder: (context) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.85,
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 40,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: Colors.grey[600],
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // --- LA PORTADA INTELIGENTE DE LA PLAYLIST ---
-              Container(
-                width: 150,
-                height: 150,
-                decoration: BoxDecoration(
-                  color: Colors.grey[850],
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 15,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: cancionesDeEstaPlaylist.isNotEmpty
-                      ? QueryArtworkWidget(
-                          id: cancionesDeEstaPlaylist.first.id,
-                          type: ArtworkType.AUDIO,
-                          artworkBorder: BorderRadius.zero,
-                          size: 500,
-                          nullArtworkWidget: const Icon(
-                            Icons.music_note,
-                            size: 80,
-                            color: Colors.grey,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.queue_music,
-                          size: 80,
-                          color: Colors.grey,
-                        ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              Text(
-                nombrePlaylist,
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              Text(
-                "${cancionesDeEstaPlaylist.length} canciones",
-                style: const TextStyle(fontSize: 16, color: Colors.greenAccent),
-              ),
-              const SizedBox(height: 24),
-
-              // --- LA LISTA DE CANCIONES ---
-              Expanded(
-                child: cancionesDeEstaPlaylist.isEmpty
-                    ? Center(
-                        child: Text(
-                          "Aún no has agregado canciones aquí",
-                          style: TextStyle(color: Colors.grey[500]),
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: cancionesDeEstaPlaylist.length,
-                        itemBuilder: (context, index) {
-                          var cancion = cancionesDeEstaPlaylist[index];
-                          return ListTile(
-                            leading: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: SizedBox(
-                                width: 45,
-                                height: 45,
-                                child: QueryArtworkWidget(
-                                  id: cancion.id,
-                                  type: ArtworkType.AUDIO,
-                                  nullArtworkWidget: Container(
-                                    color: Colors.grey[800],
-                                    child: const Icon(
-                                      Icons.music_note,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            title: Text(
-                              cancion.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                            subtitle: Text(
-                              cancion.artist ?? "Desconocido",
-                              maxLines: 1,
-                              style: TextStyle(color: Colors.grey[400]),
-                            ),
-                            onTap: () {
-                              setState(() {
-                                _colaReproduccion = cancionesDeEstaPlaylist;
-                              });
-                              _reproducirCancion(index);
-                              Navigator.pop(context);
-                              _mostrarPantallaReproduccion(context);
-                            },
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
+        return PlaylistDetailSheet(
+          nombrePlaylist: nombrePlaylist,
+          cancionesDeEstaPlaylist: cancionesDeEstaPlaylist,
+          onSongTap: (index, canciones) {
+            setState(() {
+              _colaReproduccion = canciones;
+            });
+            _reproducirCancion(index);
+            _mostrarPantallaReproduccion(context);
+          },
         );
       },
     );
@@ -877,334 +369,262 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 4,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text(
-            'MiBeat',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          elevation: 0,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const PantallaAjustes(),
-                  ),
-                );
-              },
-            ),
-          ],
-          bottom: const TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            padding: EdgeInsets.only(left: 8),
-            indicatorColor: Colors.greenAccent,
-            labelColor: Colors.greenAccent,
-            unselectedLabelColor: Colors.grey,
-            indicatorWeight: 3,
-            tabs: [
-              Tab(text: 'Canciones'),
-              Tab(text: 'Playlists'),
-              Tab(text: 'Artistas'),
-              Tab(text: 'Carpetas'),
-            ],
-          ),
-        ),
-
-        // --- AQUÍ ESTÁN LAS 4 PANTALLAS ---
-        body: TabBarView(
-          children: [
-            TabCanciones(
-              tienePermiso: _tienePermiso,
-              cancionesFuture: _tienePermiso ? _cancionesFuture : null,
-              listaCanciones: _listaCanciones,
-              onPlay: (indice, listaBase) {
-                setState(() {
-                  _colaReproduccion = listaBase;
-                });
-                _reproducirCancion(indice);
-                _mostrarPantallaReproduccion(context);
-              },
-              onLongPress: (cancion) {
-                _mostrarOpcionesCancion(context, cancion);
-              },
-            ),
-
-            TabPlaylists(
-              playlists: _misPlaylists,
-              onCrearPlaylist: () {
-                _mostrarDialogoCrearAlbum(context);
-              },
-              onPlaylistTap: (nombre) {
-                _abrirPlaylist(context, nombre);
-              },
-            ),
-
-            TabArtistas(
-              audioQuery: _audioQuery,
-              onArtistTap: (artista) {
-                _mostrarCancionesArtista(context, artista);
-              },
-            ),
-
-            const Center(
-              child: Text(
-                '📁 Pantalla de Carpetas\n(Próximamente)',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 18, color: Colors.grey),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: notificadorTema,
+      builder: (context, tema, child) {
+        return DefaultTabController(
+          length: 4,
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text(
+                'MiBeat',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
-            ),
-          ],
-        ),
-
-        bottomNavigationBar: _cancionActual == null
-            ? const SizedBox.shrink()
-            : SafeArea(
-                child: GestureDetector(
-                  onTap: () {
-                    _mostrarPantallaReproduccion(context);
-                  },
-                  child: Container(
-                    height: 72,
-                    margin: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[900],
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.4),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: Column(
-                        children: [
-                          // --- LA LÍNEA FINA DE PROGRESO ---
-                          StreamBuilder<Duration>(
-                            stream: _reproductor.positionStream,
-                            builder: (context, snapshot) {
-                              final posicion = snapshot.data ?? Duration.zero;
-                              final duracion =
-                                  _reproductor.duration ??
-                                  const Duration(seconds: 1);
-
-                              double progreso =
-                                  posicion.inMilliseconds /
-                                  duracion.inMilliseconds;
-                              if (progreso.isNaN || progreso.isInfinite) {
-                                progreso = 0.0;
-                              }
-                              if (progreso > 1.0) progreso = 1.0;
-
-                              return LinearProgressIndicator(
-                                value: progreso,
-                                minHeight: 3,
-                                backgroundColor: Colors.grey[800],
-                                valueColor: const AlwaysStoppedAnimation<Color>(
-                                  Colors.greenAccent,
-                                ),
-                              );
-                            },
-                          ),
-
-                          // --- EL CONTENIDO DEL REPRODUCTOR ---
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12.0,
-                              ),
-                              child: Row(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: SizedBox(
-                                      width: 45,
-                                      height: 45,
-                                      child: QueryArtworkWidget(
-                                        id: _cancionActual!.id,
-                                        type: ArtworkType.AUDIO,
-                                        artworkBorder: BorderRadius.zero,
-                                        nullArtworkWidget: Container(
-                                          color: Colors.grey[800],
-                                          child: const Icon(
-                                            Icons.music_note,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          _cancionActual!.title,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 15,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          _cancionActual!.artist ??
-                                              "Artista desconocido",
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[400],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  StreamBuilder<bool>(
-                                    stream: _reproductor.playingStream,
-                                    builder: (context, snapshot) {
-                                      bool isPlaying = snapshot.data ?? false;
-                                      return IconButton(
-                                        icon: Icon(
-                                          isPlaying
-                                              ? Icons.pause_rounded
-                                              : Icons.play_arrow_rounded,
-                                        ),
-                                        iconSize: 36,
-                                        color: Colors.white,
-                                        onPressed: () {
-                                          if (isPlaying) {
-                                            _reproductor.pause();
-                                          } else {
-                                            _reproductor.play();
-                                          }
-                                        },
-                                      );
-                                    },
-                                  ),
-
-                                  IconButton(
-                                    icon: const Icon(Icons.skip_next_rounded),
-                                    iconSize: 32,
-                                    color: Colors.white,
-                                    onPressed: () {
-                                      _reproducirCancion(_indiceActual + 1);
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+              elevation: 0,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.settings),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const PantallaAjustes(),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
-              ),
-      ),
-    );
-  }
-}
-
-class BarraDeProgreso extends StatefulWidget {
-  final AudioPlayer reproductor;
-  const BarraDeProgreso({super.key, required this.reproductor});
-
-  @override
-  State<BarraDeProgreso> createState() => _BarraDeProgresoState();
-}
-
-class _BarraDeProgresoState extends State<BarraDeProgreso> {
-  double? _valorArrastre;
-  bool _estabaReproduciendo = false;
-
-  String _formatearTiempo(Duration duracion) {
-    String dosDigitos(int n) => n.toString().padLeft(2, "0");
-    String minutos = dosDigitos(duracion.inMinutes.remainder(60));
-    String segundos = dosDigitos(duracion.inSeconds.remainder(60));
-    return "$minutos:$segundos";
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<Duration>(
-      stream: widget.reproductor.positionStream,
-      builder: (context, snapshot) {
-        final posicionActual = snapshot.data ?? Duration.zero;
-        final duracionTotal = widget.reproductor.duration ?? Duration.zero;
-
-        double valorSlider =
-            _valorArrastre ?? posicionActual.inSeconds.toDouble();
-        double maxSlider = duracionTotal.inSeconds.toDouble();
-
-        if (valorSlider > maxSlider) valorSlider = maxSlider;
-        if (maxSlider <= 0) maxSlider = 1;
-
-        return Column(
-          children: [
-            Slider(
-              min: 0.0,
-              max: maxSlider,
-              value: valorSlider,
-              activeColor: Colors.greenAccent,
-              inactiveColor: Colors.grey[800],
-              onChangeStart: (value) {
-                _estabaReproduciendo = widget.reproductor.playing;
-                widget.reproductor.pause();
-                setState(() {
-                  _valorArrastre = value;
-                });
-              },
-              onChanged: (value) {
-                setState(() {
-                  _valorArrastre = value;
-                });
-              },
-              onChangeEnd: (value) async {
-                await widget.reproductor.seek(Duration(seconds: value.toInt()));
-                if (_estabaReproduciendo) {
-                  widget.reproductor.play();
-                }
-                setState(() {
-                  _valorArrastre = null;
-                });
-              },
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _formatearTiempo(Duration(seconds: valorSlider.toInt())),
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                  Text(
-                    _formatearTiempo(duracionTotal),
-                    style: const TextStyle(color: Colors.grey),
-                  ),
+              ],
+              bottom: const TabBar(
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                padding: EdgeInsets.only(left: 8),
+                indicatorColor: Colors.greenAccent,
+                labelColor: Colors.greenAccent,
+                unselectedLabelColor: Colors.grey,
+                indicatorWeight: 3,
+                tabs: [
+                  Tab(text: 'Canciones'),
+                  Tab(text: 'Playlists'),
+                  Tab(text: 'Artistas'),
+                  Tab(text: 'Favoritos'),
                 ],
               ),
             ),
-          ],
+
+            // --- AQUÍ ESTÁN LAS 4 PANTALLAS ---
+            body: TabBarView(
+              children: [
+                TabCanciones(
+                  tienePermiso: _tienePermiso,
+                  cancionesFuture: _tienePermiso ? _cancionesFuture : null,
+                  listaCanciones: _listaCanciones,
+                  onPlay: (indice, listaBase) {
+                    setState(() {
+                      _colaReproduccion = listaBase;
+                    });
+                    _reproducirCancion(indice);
+                    _mostrarPantallaReproduccion(context);
+                  },
+                  onLongPress: (cancion) {
+                    _mostrarOpcionesCancion(context, cancion);
+                  },
+                ),
+
+                TabPlaylists(
+                  playlists: _misPlaylists,
+                  onCrearPlaylist: () {
+                    _mostrarDialogoCrearAlbum(context);
+                  },
+                  onPlaylistTap: (nombre) {
+                    _abrirPlaylist(context, nombre);
+                  },
+                ),
+
+                TabArtistas(
+                  audioQuery: _audioQuery,
+                  onArtistTap: (artista) {
+                    _mostrarCancionesArtista(context, artista);
+                  },
+                ),
+
+                // --- NUEVA PESTAÑA DE FAVORITOS ---
+                TabFavoritos(
+                  listaCanciones: _listaCanciones,
+                  notificadorFavoritos: _notificadorFavoritos,
+                  onPlay: (index, cancionesFavoritas) {
+                    setState(() {
+                      _colaReproduccion = cancionesFavoritas;
+                    });
+                    _reproducirCancion(index);
+                    _mostrarPantallaReproduccion(context);
+                  },
+                ),
+              ],
+            ),
+
+            bottomNavigationBar: _cancionActual == null
+                ? const SizedBox.shrink()
+                : SafeArea(
+                    child: GestureDetector(
+                      onTap: () {
+                        _mostrarPantallaReproduccion(context);
+                      },
+                      child: Container(
+                        height: 72,
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[900],
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.4),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Column(
+                            children: [
+                              // --- LA LÍNEA FINA DE PROGRESO ---
+                              StreamBuilder<Duration>(
+                                stream: _reproductor.positionStream,
+                                builder: (context, snapshot) {
+                                  final posicion =
+                                      snapshot.data ?? Duration.zero;
+                                  final duracion =
+                                      _reproductor.duration ??
+                                      const Duration(seconds: 1);
+
+                                  double progreso =
+                                      posicion.inMilliseconds /
+                                      duracion.inMilliseconds;
+                                  if (progreso.isNaN || progreso.isInfinite) {
+                                    progreso = 0.0;
+                                  }
+                                  if (progreso > 1.0) progreso = 1.0;
+
+                                  return LinearProgressIndicator(
+                                    value: progreso,
+                                    minHeight: 3,
+                                    backgroundColor: Colors.grey[800],
+                                    valueColor:
+                                        const AlwaysStoppedAnimation<Color>(
+                                          Colors.greenAccent,
+                                        ),
+                                  );
+                                },
+                              ),
+
+                              // --- EL CONTENIDO DEL REPRODUCTOR ---
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12.0,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: SizedBox(
+                                          width: 45,
+                                          height: 45,
+                                          child: QueryArtworkWidget(
+                                            id: _cancionActual!.id,
+                                            type: ArtworkType.AUDIO,
+                                            artworkBorder: BorderRadius.zero,
+                                            nullArtworkWidget: Container(
+                                              color: Colors.grey[800],
+                                              child: const Icon(
+                                                Icons.music_note,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+
+                                      Expanded(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              _cancionActual!.title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              _cancionActual!.artist ??
+                                                  "Artista desconocido",
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[400],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+
+                                      StreamBuilder<bool>(
+                                        stream: _reproductor.playingStream,
+                                        builder: (context, snapshot) {
+                                          bool isPlaying =
+                                              snapshot.data ?? false;
+                                          return IconButton(
+                                            icon: Icon(
+                                              isPlaying
+                                                  ? Icons.pause_rounded
+                                                  : Icons.play_arrow_rounded,
+                                            ),
+                                            iconSize: 36,
+                                            color: Colors.white,
+                                            onPressed: () {
+                                              if (isPlaying) {
+                                                _reproductor.pause();
+                                              } else {
+                                                _reproductor.play();
+                                              }
+                                            },
+                                          );
+                                        },
+                                      ),
+
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.skip_next_rounded,
+                                        ),
+                                        iconSize: 32,
+                                        color: Colors.white,
+                                        onPressed: () {
+                                          _reproducirCancion(_indiceActual + 1);
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
         );
       },
     );

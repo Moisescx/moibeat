@@ -127,10 +127,10 @@ class TabArtistas extends StatelessWidget {
                         artista.artist ?? "Desconocido",
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       subtitle: Padding(
@@ -139,7 +139,9 @@ class TabArtistas extends StatelessWidget {
                           "${artista.numberOfTracks} canciones",
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey[400],
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
                       ),

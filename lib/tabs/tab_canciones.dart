@@ -5,8 +5,7 @@ class TabCanciones extends StatefulWidget {
   final bool tienePermiso;
   final Future<List<SongModel>>? cancionesFuture;
   final List<SongModel> listaCanciones;
-  final Function(int, List<SongModel>)
-  onPlay; 
+  final Function(int, List<SongModel>) onPlay;
   final Function(SongModel) onLongPress;
 
   const TabCanciones({
@@ -154,7 +153,7 @@ class _TabCancionesState extends State<TabCanciones> {
                   padding: const EdgeInsets.only(top: 4.0),
                   child: Text(
                     cancion.artist ?? "Artista desconocido",
-                    style: TextStyle(fontSize: 14, color: Colors.grey[400]),
+                    style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                   ),
                 ),
                 trailing: Container(

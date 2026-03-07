@@ -20,8 +20,7 @@ class TabPlaylists extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap:
-                onCrearPlaylist, 
+            onTap: onCrearPlaylist,
             borderRadius: BorderRadius.circular(20),
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
@@ -55,12 +54,12 @@ class TabPlaylists extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          const Text(
+          Text(
             "Mi Colección",
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 16),
@@ -116,15 +115,15 @@ class TabPlaylists extends StatelessWidget {
                           ),
                           title: Text(
                             playlists[index],
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 18,
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                           ),
-                          trailing: const Icon(
+                          trailing: Icon(
                             Icons.arrow_forward_ios,
-                            color: Colors.grey,
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                             size: 16,
                           ),
                           onTap: () {

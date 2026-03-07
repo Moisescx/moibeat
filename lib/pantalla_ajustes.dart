@@ -4,6 +4,9 @@ import 'ventana_actualizacion.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
+// import 'package:shared_preferences/shared_preferences.dart'; // SUSPENDIDO
+// import 'services/lyrics_service.dart'; // SUSPENDIDO
+// import 'services/genius_service.dart'; // SUSPENDIDO
 
 class PantallaAjustes extends StatelessWidget {
   const PantallaAjustes({super.key});
@@ -38,15 +41,35 @@ class PantallaAjustes extends StatelessWidget {
           ),
 
           ListTile(
-            leading: const Icon(Icons.update, color: Colors.white),
-            title: const Text(
+            leading: Icon(Icons.update, color: Theme.of(context).colorScheme.onSurface),
+            title: Text(
               "Buscar actualizaciones",
-              style: TextStyle(color: Colors.white),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
             ),
             onTap: () {
               _buscarActualizacion(context);
             },
           ),
+
+          const Divider(),
+
+          // --- CONFIGURACIÓN DE LETRAS (SUSPENDIDO) ---
+          /*
+          ListTile(
+            leading: const Icon(Icons.lyrics, color: Colors.greenAccent),
+            title: const Text(
+              "Configurar búsqueda de letras",
+              style: TextStyle(color: Colors.white),
+            ),
+            subtitle: const Text(
+              "Habilita Genius API para buscar letras automáticamente",
+              style: TextStyle(fontSize: 12),
+            ),
+            onTap: () {
+              _mostrarDialogoGeniusAPI(context);
+            },
+          ),
+          */
 
           const Spacer(),
 
@@ -54,17 +77,20 @@ class PantallaAjustes extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 30.0),
             child: Column(
               children: [
-                const Text(
+                Text(
                   'MiBeat v2.0.0',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: Colors.grey,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
                 const SizedBox(height: 5),
                 Text(
                   'Desarrollado con ❤️ por MM',
-                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -73,6 +99,148 @@ class PantallaAjustes extends StatelessWidget {
       ),
     );
   }
+
+  // --- CONFIGURACIÓN DE LETRAS (SUSPENDIDO) ---
+  /*
+  // --- CONFIGURAR GENIUS API ---
+  Future<void> _mostrarDialogoGeniusAPI(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    final apiKeyGuardada = prefs.getString('genius_api_key') ?? '';
+    final geniusHabilitado = prefs.getBool('genius_habilitado') ?? false;
+
+    TextEditingController controladorAPI = TextEditingController(
+      text: apiKeyGuardada,
+    );
+
+    if (!context.mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[900],
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            "Configurar Genius API",
+            style: TextStyle(color: Colors.white, fontSize: 20),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  "📝 ¿Cómo obtener tu clave API de Genius?",
+                  style: TextStyle(
+                    color: Colors.greenAccent,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  "1. Abre genius.com/api-clients\n"
+                  "2. Crea una cuenta (si no tienes)\n"
+                  "3. Genera una nueva API Token\n"
+                  "4. Copia el token aquí",
+                  style: TextStyle(color: Colors.grey, height: 1.6),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: controladorAPI,
+                  obscureText: true,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText:
+                        "qt4sly2PhkKNR_LZ4AJyfn6rjJey-ZOzc5OKftrUJKVnz3l5Jq78LNwdIelUua9_",
+                    hintStyle: TextStyle(color: Colors.grey[600]),
+                    enabledBorder: const OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.greenAccent),
+                    ),
+                    focusedBorder: const OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: Colors.greenAccent,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  geniusHabilitado
+                      ? "✅ Búsqueda de letras HABILITADA"
+                      : "⏸️ Búsqueda de letras deshabilitada",
+                  style: TextStyle(
+                    color: geniusHabilitado ? Colors.greenAccent : Colors.grey,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                "Cancelar",
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.greenAccent,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              onPressed: () async {
+                final apiKey = controladorAPI.text.trim();
+
+                if (apiKey.isEmpty) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Por favor ingresa tu API token'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                  return;
+                }
+
+                // Guardar en SharedPreferences
+                await prefs.setString('genius_api_key', apiKey);
+                await prefs.setBool('genius_habilitado', true);
+
+                // Actualizar el servicio
+                LyricsService.habilitarGeniusAPI = true;
+
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        '✅ Genius API configurado. '
+                        'Las letras se buscarán automáticamente',
+                      ),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              },
+              child: const Text(
+                "Guardar",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  */
 
   // --- EL CEREBRO DE LAS ACTUALIZACIONES ---
   Future<void> _buscarActualizacion(BuildContext context) async {
